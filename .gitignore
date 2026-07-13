@@ -8,4 +8,5 @@ venv/
 data/index/
 data/memory/
 data/eval/reports/
-
+data/ui_uploads/
+data/ui_docstore/

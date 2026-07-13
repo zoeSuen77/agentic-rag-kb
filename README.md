@@ -219,3 +219,26 @@ Assistant interrupt: 你指的是哪个模块的部署？
 User clarification: Qdrant 和 Gradio
 Resumed -> query_rewrite_node -> ambiguity_detection_node -> continue
 ```
+
+## Gradio UI
+
+启动演示界面：
+
+```bash
+python app.py
+```
+
+界面包含：
+
+- 文档上传与索引构建：支持 `pdf/md/txt/docx`，显示文档数、parent chunk 数、child chunk 数和索引状态。
+- Agentic RAG 对话：支持流式输出答案、引用来源展示，以及需要澄清时的 Human-in-the-loop 输入框。
+- Debug 面板：折叠展示 `rewritten_query`、`ambiguity_result`、`decomposed_tasks`、子图检索 debug、rerank 分数、final contexts、aggregation/memory debug。
+- Evaluation 面板：上传 `eval_dataset.jsonl` 后运行 RAGAS-compatible 评测，展示 `AnswerCorrectness`、`ContextRecall`、`Faithfulness`、`ContextPrecision`。
+
+截图占位：
+
+```text
+docs/images/gradio-ui-placeholder.png
+```
+
+后续可以在本地启动 UI 后截取页面，并把截图保存到上述路径用于 README 展示。
