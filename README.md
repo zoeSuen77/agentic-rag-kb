@@ -174,3 +174,30 @@ Cross-Encoder reranking is strong for precision because it reads the query and
 candidate context together, rather than comparing separately embedded vectors.
 That makes it better at deciding which retrieved parent context actually answers
 the question after Dense + Sparse have produced a high-recall candidate set.
+
+## Baseline RAG
+
+The baseline RAG chain is intentionally non-Agentic. It is the comparison target
+for later LangGraph-based Agentic RAG work.
+
+```text
+User Query
+  -> HybridRetriever
+      -> Dense Retrieval from Qdrant
+      -> Sparse BM25 Retrieval
+      -> RRF Fusion
+      -> Parent Context Recall
+  -> CrossEncoderReranker
+  -> Prompt Builder
+  -> Ollama LLM
+  -> Answer + Contexts + Citations + Retrieval Debug
+```
+
+Run:
+
+```bash
+python scripts/ask_baseline.py --query "如何配置数据库连接池？"
+```
+
+The baseline prompt requires the model to answer only from the supplied context,
+say it does not know when evidence is insufficient, and output citation sources.
