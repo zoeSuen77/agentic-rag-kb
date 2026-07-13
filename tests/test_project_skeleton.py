@@ -15,7 +15,7 @@ def test_settings_can_be_created() -> None:
 def test_graph_state_types_are_importable() -> None:
     """Graph state contracts should be importable before implementation begins."""
 
-    main_state: MainGraphState = {"session_id": "test", "user_query": "hello"}
-    sub_state: RetrievalSubGraphState = {"sub_query_id": "sq_1", "sub_query": "hello"}
-    assert main_state["session_id"] == "test"
-    assert sub_state["sub_query_id"] == "sq_1"
+    main_state: MainGraphState = {"original_query": "hello"}
+    sub_state: RetrievalSubGraphState = {"sub_task_id": "sq_1", "sub_query": "hello"}
+    assert main_state["original_query"] == "hello"
+    assert sub_state["sub_task_id"] == "sq_1"
