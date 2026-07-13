@@ -1,10 +1,10 @@
 """Retrieval layer.
 
-The retrieval module performs dense retrieval, sparse retrieval, hybrid fusion,
-and parent expansion before reranking.
+The retrieval module performs dense retrieval, sparse retrieval, RRF hybrid fusion,
+debug tracing, and parent context expansion before reranking.
 """
 
 from agentic_rag_kb.retrieval.hybrid import HybridRetriever
+from agentic_rag_kb.retrieval.models import RetrievedChunk, RetrievalDebugInfo
 
-__all__ = ["HybridRetriever"]
-
+__all__ = ["HybridRetriever", "RetrievedChunk", "RetrievalDebugInfo"]

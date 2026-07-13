@@ -45,6 +45,9 @@ class VectorStore(Protocol):
     def search(self, collection_name: str, query_vector: list[float], top_k: int) -> list[VectorSearchResult]:
         """Search by dense vector."""
 
+    def scroll_payloads(self, collection_name: str) -> list[dict]:
+        """Return all payloads in a collection for local sparse retrieval."""
+
 
 class QdrantStore:
     """Qdrant-backed vector store implementation."""
@@ -114,6 +117,29 @@ class QdrantStore:
             for item in results
         ]
 
+    def scroll_payloads(self, collection_name: str) -> list[dict]:
+        """Scroll all payloads from Qdrant.
+
+        This is sufficient for the first BM25 implementation. A future production
+        optimization can replace it with Qdrant sparse vectors or a dedicated BM25
+        index service.
+        """
+
+        payloads: list[dict] = []
+        offset = None
+        while True:
+            records, offset = self.client.scroll(
+                collection_name=collection_name,
+                limit=256,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            payloads.extend(dict(record.payload or {}) for record in records)
+            if offset is None:
+                break
+        return payloads
+
 
 class InMemoryVectorStore:
     """Small vector store used by tests and local smoke checks."""
@@ -146,6 +172,11 @@ class InMemoryVectorStore:
             for point in points
         ]
         return sorted(scored, key=lambda result: result.score, reverse=True)[:top_k]
+
+    def scroll_payloads(self, collection_name: str) -> list[dict]:
+        """Return all in-memory payloads."""
+
+        return [point.payload for point in self.collections.get(collection_name, {}).values()]
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:

@@ -131,3 +131,15 @@ Defaults:
 
 - Qdrant collection: `agentic_rag_chunks`
 - Parent docstore: `data/docstore/parent_chunks.jsonl`
+
+## Hybrid Retrieval
+
+Run Dense + Sparse hybrid retrieval with parent context expansion:
+
+```bash
+python scripts/retrieve.py --query "如何配置数据库连接池？"
+```
+
+The retrieval stage records debug information for dense hits, sparse hits, fused
+ranking, and parent context recall. Use `--no-rerank` to skip cross-encoder rerank
+during local smoke checks.
