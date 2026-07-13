@@ -1,0 +1,9 @@
+ollama:
+  base_url: http://localhost:11434
+  chat_model: qwen2.5:7b
+  embed_model: nomic-embed-text
+  timeout_seconds: 60
+local_fallback:
+  enabled: true
+  embedding_dimensions: 256
+

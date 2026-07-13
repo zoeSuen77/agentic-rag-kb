@@ -388,6 +388,28 @@ Reports should include:
 
 ## Implementation Roadmap
 
+## Current Implementation Status
+
+The repository now contains a runnable first implementation of the planned architecture:
+
+- document discovery, parsing, cleaning, and parent-child chunk construction;
+- deterministic local dense embeddings for development and tests;
+- sparse BM25-style retrieval;
+- dense + sparse hybrid retrieval with reciprocal rank fusion;
+- parent expansion from child hits;
+- local cross-encoder-compatible lexical reranker interface;
+- main graph and sub retrieval graph orchestration;
+- parallel sub retrieval dispatch that mirrors LangGraph `Send` semantics;
+- optional native LangGraph `StateGraph` factory using `Send` for production orchestration;
+- ambiguity detection and human clarification path;
+- fallback answer path for insufficient retrieval evidence;
+- conversation memory helpers;
+- RAGAS-compatible evaluation runner with local metric fallbacks;
+- Gradio, API, ingestion, and evaluation entry points;
+- unit, retrieval, graph, and evaluation tests.
+
+External production services such as Qdrant, Ollama, LangGraph, Gradio, and RAGAS are represented by clean integration boundaries. The local fallback implementations keep the project testable before those services are installed or running.
+
 ### Phase 1: Project Skeleton
 
 - Create package layout.

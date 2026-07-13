@@ -1,0 +1,7 @@
+dense_top_k: 30
+sparse_top_k: 30
+fusion_top_k: 50
+rerank_top_n: 8
+rrf_k: 60
+parent_context_budget_chars: 8000
+
