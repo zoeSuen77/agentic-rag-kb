@@ -27,6 +27,7 @@ def test_default_main_graph_state_values() -> None:
     assert state["decomposition_debug"] == {}
     assert state["sub_answers"] == []
     assert state["retrieved_contexts"] == []
+    assert state["aggregation_debug"] == {}
     assert state["loop_count"] == 0
     assert state["error_messages"] == []
     assert state["retrieval_debug"] == {}

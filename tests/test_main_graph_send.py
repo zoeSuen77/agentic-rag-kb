@@ -115,8 +115,8 @@ def test_context_reducer_dedupes_parent_ids() -> None:
 
     result = answer_aggregation_node(state)
 
-    assert result["final_answer"].count("docs/a.md") == 1
-    assert "docs/a-duplicate.md" in result["final_answer"]
+    assert result["aggregation_debug"]["citation_sources"] == ["docs/a.md", "docs/a-duplicate.md"]
+    assert "引用来源" in result["final_answer"]
 
 
 @pytest.mark.parametrize("task_count", [1, 3])

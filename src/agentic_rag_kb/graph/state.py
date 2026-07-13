@@ -104,6 +104,9 @@ class MainGraphState(TypedDict, total=False):
     # Final synthesized answer returned to the user.
     final_answer: str
 
+    # Debug payload explaining answer aggregation decisions and evidence gaps.
+    aggregation_debug: dict[str, Any]
+
     # Number of graph retry/fallback loops already used.
     loop_count: int
 

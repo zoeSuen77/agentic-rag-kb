@@ -11,6 +11,7 @@ The main graph performs the map-reduce portion of Agentic RAG:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Protocol
 
 from agentic_rag_kb.agents.query_decomposer import task_decomposition_node
@@ -222,40 +223,37 @@ def answer_aggregation_node(
     state: MainGraphState,
     llm_client: Any | None = None,
 ) -> MainGraphState:
-    """Reduce subanswers into a final answer."""
+    """Reduce subanswers into a structured final answer with citation audit."""
 
     sub_answers = state.get("sub_answers", [])
+    aggregation_debug = _build_aggregation_debug(sub_answers, state.get("retrieved_contexts", []))
     if not sub_answers:
         return {
             **state,
             "final_answer": "当前没有可用的子任务答案，无法生成最终回答。",
+            "aggregation_debug": aggregation_debug,
         }
 
     if llm_client is not None:
         try:
-            prompt = _build_aggregation_prompt(state)
+            prompt = _build_aggregation_prompt(state, aggregation_debug)
             final_answer = str(llm_client.generate(prompt)).strip()
             if final_answer:
-                return {**state, "final_answer": final_answer}
+                unknown_sources = _unknown_sources_in_answer(final_answer, aggregation_debug["citation_sources"])
+                if not unknown_sources:
+                    return {**state, "final_answer": final_answer, "aggregation_debug": aggregation_debug}
+                raise ValueError(f"LLM output used unknown citations: {unknown_sources}")
         except Exception as exc:
             state = {
                 **state,
                 "error_messages": [*state.get("error_messages", []), f"answer_aggregation_llm_error: {exc}"],
             }
 
-    lines = ["综合多个子问题的检索结果，答案如下："]
-    for index, item in enumerate(sub_answers, start=1):
-        sub_query = item.get("sub_query", "")
-        confidence = float(item.get("confidence", 0.0))
-        status = "证据不足" if item.get("insufficient_context") else "可回答"
-        lines.append(f"\n{index}. {sub_query}（confidence={confidence:.2f}, {status}）")
-        lines.append(str(item.get("sub_answer", "")).strip())
-
-    citations = _citation_lines(state.get("retrieved_contexts", []))
-    if citations:
-        lines.append("\n汇总引用来源：")
-        lines.extend(citations)
-    return {**state, "final_answer": "\n".join(lines)}
+    return {
+        **state,
+        "final_answer": _build_deterministic_final_answer(state, aggregation_debug),
+        "aggregation_debug": aggregation_debug,
+    }
 
 
 def _reduce_main_updates(
@@ -292,18 +290,40 @@ def _contexts_from_subgraph_result(result: RetrievalSubGraphState) -> list[dict[
     return contexts
 
 
-def _build_aggregation_prompt(state: MainGraphState) -> str:
+def _build_aggregation_prompt(state: MainGraphState, aggregation_debug: dict[str, Any]) -> str:
     sub_answer_block = "\n\n".join(
         f"[{index}] 子问题：{item.get('sub_query')}\n"
         f"置信度：{item.get('confidence')}\n"
+        f"证据不足：{item.get('insufficient_context', False)}\n"
         f"答案：{item.get('sub_answer')}"
         for index, item in enumerate(state.get("sub_answers", []), start=1)
     )
-    context_block = "\n".join(_citation_lines(state.get("retrieved_contexts", [])))
+    context_block = "\n".join(_context_evidence_lines(state.get("retrieved_contexts", [])))
+    allowed_sources = "\n".join(f"- {source}" for source in aggregation_debug["citation_sources"])
+    conflict_block = "\n".join(
+        f"- {item['description']} sources={item['sources']}" for item in aggregation_debug["conflicts"]
+    )
+    insufficient_block = "\n".join(
+        f"- {item['sub_task_id']}: {item['sub_query']}" for item in aggregation_debug["insufficient_context"]
+    )
     return f"""你是企业 Agentic RAG 主图的答案聚合节点。
 
-请基于多个子任务答案生成一个结构清晰的最终回答。
-必须保留引用来源；如果某个子问题证据不足，要明确说明。
+请基于多个子任务答案生成一个结构完整、引用明确、无重复的最终回答。
+
+硬性约束：
+1. 不得使用子任务答案和可用上下文以外的知识。
+2. 不得编造引用，只能使用“允许引用来源”列表中的 source。
+3. 每个重要结论后面必须带 source。
+4. 如果子答案冲突，必须指出冲突来源。
+5. 如果某个子问题上下文不足，必须明确说明不足。
+6. 不要简单拼接子答案，要合并重复结论。
+
+最终答案结构必须包含：
+- 直接回答
+- 分点解释
+- 关键依据
+- 引用来源
+- 上下文不足（如无不足，写“无”）
 
 原始问题：
 {state.get("original_query") or state.get("rewritten_query")}
@@ -311,23 +331,282 @@ def _build_aggregation_prompt(state: MainGraphState) -> str:
 子任务答案：
 {sub_answer_block}
 
-可用引用：
+可用上下文：
 {context_block}
+
+允许引用来源：
+{allowed_sources}
+
+已识别冲突：
+{conflict_block or "无"}
+
+上下文不足的子问题：
+{insufficient_block or "无"}
 """
+
+
+def _build_deterministic_final_answer(
+    state: MainGraphState,
+    aggregation_debug: dict[str, Any],
+) -> str:
+    sub_answers = state.get("sub_answers", [])
+    used_ids = {item["sub_task_id"] for item in aggregation_debug["used_sub_answers"]}
+    duplicate_ids = {item["discarded_sub_task_id"] for item in aggregation_debug["discarded_duplicates"]}
+    sufficient_answers = [
+        item
+        for item in sub_answers
+        if item.get("sub_task_id") in used_ids
+        and item.get("sub_task_id") not in duplicate_ids
+        and not item.get("insufficient_context")
+    ]
+    insufficient = aggregation_debug["insufficient_context"]
+    conflicts = aggregation_debug["conflicts"]
+
+    lines = ["直接回答"]
+    if sufficient_answers:
+        source_hint = _sources_for_sub_answer(sufficient_answers[0], state.get("retrieved_contexts", []))
+        lines.append(
+            f"基于已检索到的子任务证据，可以回答原问题的主要部分；具体结论见下方分点解释。"
+            f" [{', '.join(source_hint) or 'unknown'}]"
+        )
+    else:
+        lines.append("当前上下文不足，无法形成完整可靠的最终答案。")
+
+    lines.append("\n分点解释")
+    for index, item in enumerate(sufficient_answers, start=1):
+        sources = _sources_for_sub_answer(item, state.get("retrieved_contexts", []))
+        answer_text = _strip_citation_section(str(item.get("sub_answer", ""))).strip()
+        answer_text = answer_text or "该子问题没有可用答案。"
+        lines.append(
+            f"{index}. {item.get('sub_query', '')}：{answer_text} "
+            f"[{', '.join(sources) or 'unknown'}]"
+        )
+
+    if conflicts:
+        lines.append("\n冲突说明")
+        for conflict in conflicts:
+            lines.append(f"- {conflict['description']} 来源：{', '.join(conflict['sources']) or 'unknown'}")
+
+    lines.append("\n关键依据")
+    evidence_lines = _context_evidence_lines(state.get("retrieved_contexts", []))
+    lines.extend(evidence_lines or ["- 无可用上下文依据。"])
+
+    lines.append("\n引用来源")
+    citation_lines = [f"- {source}" for source in aggregation_debug["citation_sources"]]
+    lines.extend(citation_lines or ["- 无"])
+
+    lines.append("\n上下文不足")
+    if insufficient:
+        for item in insufficient:
+            lines.append(f"- {item['sub_task_id']}: {item['sub_query']}，原因：{item['reason']}")
+    else:
+        lines.append("无")
+
+    return "\n".join(lines)
+
+
+def _build_aggregation_debug(
+    sub_answers: list[dict[str, Any]],
+    retrieved_contexts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    used = []
+    insufficient = []
+    for item in sub_answers:
+        sources = _sources_for_sub_answer(item, retrieved_contexts)
+        used.append(
+            {
+                "sub_task_id": item.get("sub_task_id", ""),
+                "sub_query": item.get("sub_query", ""),
+                "confidence": float(item.get("confidence", 0.0)),
+                "sources": sources,
+            }
+        )
+        if item.get("insufficient_context") or float(item.get("confidence", 0.0)) < 0.35:
+            insufficient.append(
+                {
+                    "sub_task_id": item.get("sub_task_id", ""),
+                    "sub_query": item.get("sub_query", ""),
+                    "reason": "insufficient_context flag or low confidence",
+                    "confidence": float(item.get("confidence", 0.0)),
+                    "sources": sources,
+                }
+            )
+
+    return {
+        "used_sub_answers": used,
+        "discarded_duplicates": _detect_duplicate_sub_answers(sub_answers),
+        "conflicts": _detect_conflicts(sub_answers, retrieved_contexts),
+        "insufficient_context": insufficient,
+        "citation_sources": _unique_sources(sub_answers, retrieved_contexts),
+    }
+
+
+def _detect_duplicate_sub_answers(sub_answers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: dict[str, dict[str, Any]] = {}
+    duplicates: list[dict[str, Any]] = []
+    for item in sub_answers:
+        if item.get("insufficient_context"):
+            continue
+        normalized = _normalize_answer_for_duplicate(str(item.get("sub_answer", "")))
+        if not normalized:
+            continue
+        if normalized in seen:
+            kept = seen[normalized]
+            duplicates.append(
+                {
+                    "kept_sub_task_id": kept.get("sub_task_id", ""),
+                    "discarded_sub_task_id": item.get("sub_task_id", ""),
+                    "reason": "same normalized answer content",
+                }
+            )
+        else:
+            seen[normalized] = item
+    return duplicates
+
+
+def _detect_conflicts(
+    sub_answers: list[dict[str, Any]],
+    retrieved_contexts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    conflicts: list[dict[str, Any]] = []
+    for left_index, left in enumerate(sub_answers):
+        if left.get("insufficient_context"):
+            continue
+        for right in sub_answers[left_index + 1 :]:
+            if right.get("insufficient_context"):
+                continue
+            if _answers_conflict(str(left.get("sub_answer", "")), str(right.get("sub_answer", ""))):
+                sources = sorted(
+                    set(
+                        [
+                            *_sources_for_sub_answer(left, retrieved_contexts),
+                            *_sources_for_sub_answer(right, retrieved_contexts),
+                        ]
+                    )
+                )
+                conflicts.append(
+                    {
+                        "sub_task_ids": [left.get("sub_task_id", ""), right.get("sub_task_id", "")],
+                        "description": (
+                            f"{left.get('sub_task_id')} 与 {right.get('sub_task_id')} "
+                            "对同一配置/结论存在肯定与否定表述。"
+                        ),
+                        "sources": sources,
+                    }
+                )
+    return conflicts
+
+
+def _answers_conflict(left: str, right: str) -> bool:
+    left_text = _strip_citation_section(left)
+    right_text = _strip_citation_section(right)
+    positive_markers = ["需要", "必须", "应该", "开启", "启用", "支持", "可以"]
+    negative_markers = ["不需要", "无需", "不能", "不应该", "关闭", "禁用", "不支持", "不可以"]
+    left_positive = any(marker in left_text for marker in positive_markers)
+    right_positive = any(marker in right_text for marker in positive_markers)
+    left_negative = any(marker in left_text for marker in negative_markers)
+    right_negative = any(marker in right_text for marker in negative_markers)
+    if not ((left_positive and right_negative) or (left_negative and right_positive)):
+        return False
+    return bool(_content_terms(left_text) & _content_terms(right_text))
+
+
+def _content_terms(text: str) -> set[str]:
+    tokens = set(re.findall(r"[A-Za-z][A-Za-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}", text))
+    stopwords = {"引用来源", "当前上下文", "子问题", "答案", "需要", "不需要", "必须", "应该", "可以"}
+    return tokens - stopwords
+
+
+def _normalize_answer_for_duplicate(answer: str) -> str:
+    text = _strip_citation_section(answer)
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"[，,。.;；:：\[\]（）()]", "", text)
+    return text[:240]
+
+
+def _strip_citation_section(answer: str) -> str:
+    return re.split(r"引用来源[:：]", answer, maxsplit=1)[0].strip()
+
+
+def _sources_for_sub_answer(
+    sub_answer: dict[str, Any],
+    retrieved_contexts: list[dict[str, Any]],
+) -> list[str]:
+    sub_task_id = sub_answer.get("sub_task_id")
+    sources = []
+    for context in retrieved_contexts:
+        if sub_task_id and context.get("sub_task_id") != sub_task_id:
+            continue
+        source = _source_from_context(context)
+        if source not in sources:
+            sources.append(source)
+    for source in _sources_from_answer_text(str(sub_answer.get("sub_answer", ""))):
+        if source not in sources:
+            sources.append(source)
+    return sources
+
+
+def _unique_sources(
+    sub_answers: list[dict[str, Any]],
+    retrieved_contexts: list[dict[str, Any]],
+) -> list[str]:
+    sources: list[str] = []
+    for item in sub_answers:
+        for source in _sources_for_sub_answer(item, retrieved_contexts):
+            if source not in sources:
+                sources.append(source)
+    for context in retrieved_contexts:
+        source = _source_from_context(context)
+        if source not in sources:
+            sources.append(source)
+    return sources
+
+
+def _sources_from_answer_text(answer: str) -> list[str]:
+    if "引用来源" not in answer:
+        return []
+    citation_part = re.split(r"引用来源[:：]", answer, maxsplit=1)[1]
+    candidates = re.split(r"[,，\n、 ]+", citation_part)
+    return [candidate.strip().strip("-") for candidate in candidates if candidate.strip().strip("-")]
+
+
+def _unknown_sources_in_answer(answer: str, allowed_sources: list[str]) -> list[str]:
+    allowed = set(allowed_sources)
+    candidates = set(re.findall(r"[\w./-]+\.(?:md|txt|pdf|docx)|parent_[\w-]+", answer))
+    return sorted(candidate for candidate in candidates if candidate not in allowed)
+
+
+def _context_evidence_lines(contexts: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    seen_sources: set[str] = set()
+    for context in contexts:
+        source = _source_from_context(context)
+        if source in seen_sources:
+            continue
+        seen_sources.add(source)
+        text = " ".join(str(context.get("text", "")).split())[:180]
+        title_path = (context.get("parent") or {}).get("title_path") or context.get("metadata", {}).get("title_path", "")
+        title = f" title_path={title_path}" if title_path else ""
+        lines.append(f"- {source}{title}: {text}")
+    return lines
 
 
 def _citation_lines(contexts: list[dict[str, Any]]) -> list[str]:
     lines: list[str] = []
     seen: set[str] = set()
     for context in contexts:
-        source = (
-            context.get("metadata", {}).get("source_path")
-            or (context.get("parent") or {}).get("source_path")
-            or context.get("parent_id")
-            or "unknown"
-        )
+        source = _source_from_context(context)
         if source in seen:
             continue
         seen.add(source)
         lines.append(f"- {source}")
     return lines
+
+
+def _source_from_context(context: dict[str, Any]) -> str:
+    return (
+        context.get("metadata", {}).get("source_path")
+        or (context.get("parent") or {}).get("source_path")
+        or context.get("parent_id")
+        or "unknown"
+    )

@@ -27,6 +27,7 @@ def default_main_graph_state(original_query: str = "") -> MainGraphState:
         sub_answers=[],
         retrieved_contexts=[],
         final_answer="",
+        aggregation_debug={},
         loop_count=0,
         error_messages=[],
         compression_summary="",
@@ -103,8 +104,8 @@ MAIN_GRAPH_NODE_IO: list[NodeIOSpec] = [
     NodeIOSpec(
         node_name="aggregate_answers",
         inputs=["sub_answers", "retrieved_contexts"],
-        outputs=["final_answer"],
-        description="Aggregate subanswers and parent contexts into a final answer draft.",
+        outputs=["final_answer", "aggregation_debug"],
+        description="Aggregate subanswers and parent contexts into a final answer with citation audit.",
     ),
     NodeIOSpec(
         node_name="fallback_or_finish",
