@@ -118,3 +118,16 @@ Outputs:
 - `data/chunks/parent_chunks.jsonl`
 - `data/chunks/child_chunks.jsonl`
 - `data/chunks/chunking_report.json`
+
+## Qdrant Indexing
+
+Index child chunks into Qdrant and store parent chunks locally for context expansion:
+
+```bash
+python scripts/index_chunks.py --child data/chunks/child_chunks.jsonl --parent data/chunks/parent_chunks.jsonl
+```
+
+Defaults:
+
+- Qdrant collection: `agentic_rag_chunks`
+- Parent docstore: `data/docstore/parent_chunks.jsonl`

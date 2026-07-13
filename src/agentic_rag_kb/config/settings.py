@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
     qdrant_api_key: str | None = Field(default=None, alias="QDRANT_API_KEY")
+    qdrant_collection: str = Field(default="agentic_rag_chunks", alias="QDRANT_COLLECTION")
     qdrant_collection_child: str = Field(default="kb_child_chunks", alias="QDRANT_COLLECTION_CHILD")
     qdrant_collection_parent: str = Field(default="kb_parent_chunks", alias="QDRANT_COLLECTION_PARENT")
 
@@ -44,4 +45,3 @@ def get_settings() -> Settings:
     """Return cached application settings."""
 
     return Settings()
-
