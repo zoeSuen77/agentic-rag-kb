@@ -1,25 +1,23 @@
 """Local filesystem document loader.
 
-This loader will be the first implementation used by upload scripts and the Gradio UI.
-It should parse files from disk and emit `LoadedDocument` instances.
+This compatibility wrapper delegates to `DocumentLoaderRouter`. It is useful for
+call sites that want a generic local loader without depending on parser details.
 """
 
 from pathlib import Path
 
-from agentic_rag_kb.document_loader.base import LoadedDocument
+from agentic_rag_kb.document_loader.base import Document
+from agentic_rag_kb.document_loader.router import DocumentLoaderRouter
 
 
 class LocalDocumentLoader:
-    """Load documents from the local filesystem.
+    """Load supported documents from the local filesystem."""
 
-    TODO:
-    - Discover supported file extensions recursively.
-    - Delegate parsing by file type.
-    - Preserve metadata needed for citations and ACL filtering.
-    """
+    def __init__(self, router: DocumentLoaderRouter | None = None) -> None:
+        self.router = router or DocumentLoaderRouter()
 
-    def load(self, path: Path) -> list[LoadedDocument]:
+    def load(self, path: Path) -> list[Document]:
         """Load documents from a path."""
 
-        raise NotImplementedError("Local document loading will be implemented in the ingestion phase.")
+        return self.router.load(path)
 

@@ -87,3 +87,20 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Document Ingestion
+
+Parse PDF, Markdown, TXT, and DOCX files from `data/raw` into standardized JSONL:
+
+```bash
+python scripts/ingest_documents.py --input data/raw --output data/processed/documents.jsonl
+```
+
+Each output row contains:
+
+- `doc_id`
+- `source_path`
+- `title`
+- `page_number`
+- `section_title`
+- `text`
+- `metadata`
