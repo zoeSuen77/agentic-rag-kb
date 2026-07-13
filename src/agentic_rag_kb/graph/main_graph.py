@@ -24,6 +24,7 @@ from agentic_rag_kb.graph.state import (
     append_sub_answers,
     merge_retrieval_debug,
 )
+from agentic_rag_kb.memory import CompressionTrigger, ConversationCompressor
 
 try:  # pragma: no cover - exercised when langgraph is installed.
     from langgraph.constants import Send
@@ -47,12 +48,21 @@ class InvokableGraph(Protocol):
         """Run a retrieval subgraph."""
 
 
+class _NoopGraph:
+    """No-op graph used only when testing memory nodes in isolation."""
+
+    def invoke(self, state: RetrievalSubGraphState) -> RetrievalSubGraphState:
+        return state
+
+
 @dataclass(slots=True)
 class MainGraphDependencies:
     """Dependencies injected into main graph nodes."""
 
     retrieval_subgraph: InvokableGraph
     llm_client: Any | None = None
+    memory_trigger: CompressionTrigger | None = None
+    memory_compressor: ConversationCompressor | None = None
 
 
 MAIN_GRAPH_MERMAID = """```mermaid
@@ -90,14 +100,18 @@ def build_main_graph(dependencies: MainGraphDependencies | None = None):
         return SequentialMainGraph(dependencies, import_error=exc)
 
     workflow = StateGraph(MainGraphState)
+    workflow.add_node("memory_check", lambda state: memory_check_node(state, dependencies))
     workflow.add_node("decompose_query", decompose_query_node)
     workflow.add_node("run_sub_retrieval", lambda state: run_sub_retrieval_node(state, dependencies))
     workflow.add_node("aggregate_answers", lambda state: answer_aggregation_node(state, dependencies.llm_client))
+    workflow.add_node("memory_update", memory_update_node)
 
-    workflow.add_edge(START, "decompose_query")
+    workflow.add_edge(START, "memory_check")
+    workflow.add_edge("memory_check", "decompose_query")
     workflow.add_conditional_edges("decompose_query", dispatch_retrieval_subgraphs, ["run_sub_retrieval"])
     workflow.add_edge("run_sub_retrieval", "aggregate_answers")
-    workflow.add_edge("aggregate_answers", END)
+    workflow.add_edge("aggregate_answers", "memory_update")
+    workflow.add_edge("memory_update", END)
     return workflow.compile()
 
 
@@ -115,7 +129,8 @@ class SequentialMainGraph:
     def invoke(self, state: MainGraphState) -> MainGraphState:
         """Run decompose -> Send map -> reducer fan-in -> aggregate."""
 
-        current = decompose_query_node(state)
+        current = memory_check_node(state, self.dependencies)
+        current = decompose_query_node(current)
         sends = dispatch_retrieval_subgraphs(current)
         updates = [run_sub_retrieval_node(send.arg, self.dependencies) for send in sends]
         reduced = _reduce_main_updates(current, updates)
@@ -130,7 +145,68 @@ class SequentialMainGraph:
                     }
                 },
             )
-        return answer_aggregation_node(reduced, self.dependencies.llm_client)
+        aggregated = answer_aggregation_node(reduced, self.dependencies.llm_client)
+        return memory_update_node(aggregated)
+
+
+def memory_check_node(
+    state: MainGraphState,
+    dependencies: MainGraphDependencies | None = None,
+) -> MainGraphState:
+    """Compress long chat history before retrieval planning."""
+
+    dependencies = dependencies or MainGraphDependencies(retrieval_subgraph=_NoopGraph())
+    trigger = dependencies.memory_trigger or CompressionTrigger()
+    compressor = dependencies.memory_compressor or ConversationCompressor()
+    should_compress, trigger_debug = trigger.should_compress(
+        turns=state.get("chat_history", []),
+        compression_summary=state.get("compression_summary", ""),
+        recent_contexts=state.get("retrieved_contexts", []),
+    )
+    memory_debug = {
+        **state.get("memory_debug", {}),
+        "memory_check": {
+            "should_compress": should_compress,
+            **trigger_debug,
+        },
+    }
+    if not should_compress:
+        return {**state, "memory_debug": memory_debug}
+
+    result = compressor.compress(
+        turns=state.get("chat_history", []),
+        existing_summary=state.get("compression_summary", ""),
+    )
+    compressed_history = _retain_recent_turns(state.get("chat_history", []), keep_last=4)
+    memory_debug["compression"] = result.to_json_dict()
+    return {
+        **state,
+        "chat_history": compressed_history,
+        "compression_summary": result.summary_text,
+        "compression_stats": result.stats.to_json_dict(),
+        "memory_debug": memory_debug,
+    }
+
+
+def memory_update_node(state: MainGraphState) -> MainGraphState:
+    """Append the current question and final answer after generation."""
+
+    chat_history = [*state.get("chat_history", [])]
+    original_query = state.get("original_query", "").strip()
+    final_answer = state.get("final_answer", "").strip()
+    if original_query:
+        chat_history.append({"role": "user", "content": original_query})
+    if final_answer:
+        chat_history.append({"role": "assistant", "content": final_answer})
+    memory_debug = {
+        **state.get("memory_debug", {}),
+        "memory_update": {
+            "added_user_turn": bool(original_query),
+            "added_assistant_turn": bool(final_answer),
+            "turn_count": len(chat_history),
+        },
+    }
+    return {**state, "chat_history": chat_history, "memory_debug": memory_debug}
 
 
 def decompose_query_node(state: MainGraphState) -> MainGraphState:
@@ -278,6 +354,12 @@ def _reduce_main_updates(
             update.get("error_messages"),
         )
     return reduced
+
+
+def _retain_recent_turns(turns: list[dict[str, str]], keep_last: int) -> list[dict[str, str]]:
+    if keep_last <= 0:
+        return []
+    return [dict(turn) for turn in turns[-keep_last:]]
 
 
 def _contexts_from_subgraph_result(result: RetrievalSubGraphState) -> list[dict[str, Any]]:

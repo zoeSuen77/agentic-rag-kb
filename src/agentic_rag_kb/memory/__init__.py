@@ -5,7 +5,27 @@ confirmed facts, unresolved questions, and retrieval traces needed for long
 technical troubleshooting sessions.
 """
 
-from agentic_rag_kb.memory.store import ConversationMemoryStore
+from agentic_rag_kb.memory.compression import (
+    CompressionResult,
+    CompressionStats,
+    CompressionTrigger,
+    ConversationCompressor,
+    ConversationMemory,
+    StructuredSummary,
+    estimate_tokens,
+    estimate_turn_tokens,
+)
+from agentic_rag_kb.memory.store import ConversationMemoryStore, LocalJSONMemoryStore
 
-__all__ = ["ConversationMemoryStore"]
-
+__all__ = [
+    "CompressionResult",
+    "CompressionStats",
+    "CompressionTrigger",
+    "ConversationCompressor",
+    "ConversationMemory",
+    "ConversationMemoryStore",
+    "LocalJSONMemoryStore",
+    "StructuredSummary",
+    "estimate_tokens",
+    "estimate_turn_tokens",
+]

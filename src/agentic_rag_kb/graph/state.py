@@ -116,6 +116,12 @@ class MainGraphState(TypedDict, total=False):
     # Long conversation summary used when chat_history becomes too large.
     compression_summary: str
 
+    # Debug payload for memory trigger, compression stats, and update behavior.
+    memory_debug: dict[str, Any]
+
+    # Compression ratio statistics from the latest memory compression.
+    compression_stats: dict[str, Any]
+
     # Debug payload containing dense hits, sparse hits, fusion ranking, and parent recall.
     retrieval_debug: Annotated[dict[str, Any], merge_retrieval_debug]
 

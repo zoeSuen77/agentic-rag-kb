@@ -31,6 +31,8 @@ def default_main_graph_state(original_query: str = "") -> MainGraphState:
         loop_count=0,
         error_messages=[],
         compression_summary="",
+        memory_debug={},
+        compression_stats={},
         retrieval_debug={},
     )
 
@@ -74,8 +76,8 @@ MAIN_GRAPH_NODE_IO: list[NodeIOSpec] = [
     NodeIOSpec(
         node_name="load_memory",
         inputs=["original_query", "chat_history"],
-        outputs=["chat_history", "compression_summary"],
-        description="Load recent conversation turns and any compressed summary.",
+        outputs=["chat_history", "compression_summary", "memory_debug", "compression_stats"],
+        description="Check long conversation memory and compress when thresholds are reached.",
     ),
     NodeIOSpec(
         node_name="detect_ambiguity",
@@ -106,6 +108,12 @@ MAIN_GRAPH_NODE_IO: list[NodeIOSpec] = [
         inputs=["sub_answers", "retrieved_contexts"],
         outputs=["final_answer", "aggregation_debug"],
         description="Aggregate subanswers and parent contexts into a final answer with citation audit.",
+    ),
+    NodeIOSpec(
+        node_name="update_memory",
+        inputs=["original_query", "final_answer", "chat_history", "compression_summary"],
+        outputs=["chat_history", "memory_debug"],
+        description="Append the current user/assistant turn after final answer generation.",
     ),
     NodeIOSpec(
         node_name="fallback_or_finish",
