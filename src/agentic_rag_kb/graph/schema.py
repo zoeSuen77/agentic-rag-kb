@@ -23,6 +23,7 @@ def default_main_graph_state(original_query: str = "") -> MainGraphState:
         clarification_question="",
         user_clarification="",
         decomposed_tasks=[],
+        decomposition_debug={},
         sub_answers=[],
         retrieved_contexts=[],
         final_answer="",
@@ -88,7 +89,7 @@ MAIN_GRAPH_NODE_IO: list[NodeIOSpec] = [
     NodeIOSpec(
         node_name="decompose_query",
         inputs=["rewritten_query", "compression_summary"],
-        outputs=["decomposed_tasks"],
+        outputs=["decomposed_tasks", "decomposition_debug"],
         description="Break complex questions into independent retrieval tasks.",
     ),
     NodeIOSpec(

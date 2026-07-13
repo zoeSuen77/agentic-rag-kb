@@ -92,6 +92,9 @@ class MainGraphState(TypedDict, total=False):
     # Decomposed retrieval tasks dispatched to retrieval subgraphs.
     decomposed_tasks: list[dict[str, Any]]
 
+    # Debug payload explaining task decomposition strategy, complexity, and task count.
+    decomposition_debug: dict[str, Any]
+
     # Subanswers returned from parallel subgraphs; aggregated by append reducer.
     sub_answers: Annotated[list[dict[str, Any]], append_sub_answers]
 
