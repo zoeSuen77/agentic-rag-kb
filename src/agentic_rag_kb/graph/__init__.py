@@ -5,7 +5,7 @@ It will use LangGraph StateGraph, conditional routing, Send API fan-out, loop li
 fallback edges, and human-in-the-loop interrupts.
 """
 
-from agentic_rag_kb.graph.main_graph import build_main_graph
+from agentic_rag_kb.graph.main_graph import MAIN_GRAPH_MERMAID, MainGraphDependencies, build_main_graph
 from agentic_rag_kb.graph.retrieval_subgraph import (
     RetrievalSubgraphConfig,
     RetrievalSubgraphDependencies,
@@ -21,7 +21,9 @@ from agentic_rag_kb.graph.state import MainGraphState, RetrievalSubGraphState
 
 __all__ = [
     "MAIN_GRAPH_NODE_IO",
+    "MAIN_GRAPH_MERMAID",
     "RETRIEVAL_SUBGRAPH_NODE_IO",
+    "MainGraphDependencies",
     "MainGraphState",
     "RetrievalSubGraphState",
     "RetrievalSubgraphConfig",
