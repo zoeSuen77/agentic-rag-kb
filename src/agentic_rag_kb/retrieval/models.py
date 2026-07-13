@@ -29,6 +29,9 @@ class RetrievedChunk:
         return asdict(self)
 
 
+RetrievedParentContext = RetrievedChunk
+
+
 @dataclass(slots=True)
 class RetrievalDebugInfo:
     """Debug trace for a retrieval call."""

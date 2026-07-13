@@ -143,3 +143,34 @@ python scripts/retrieve.py --query "如何配置数据库连接池？"
 The retrieval stage records debug information for dense hits, sparse hits, fused
 ranking, and parent context recall. Use `--no-rerank` to skip cross-encoder rerank
 during local smoke checks.
+
+## Cross-Encoder Reranking
+
+Run hybrid retrieval followed by Cross-Encoder reranking:
+
+```bash
+python scripts/rerank.py --query "如何配置数据库连接池？"
+```
+
+Rerank defaults:
+
+- `enable_rerank=true`
+- `rerank_top_n=20`
+- `final_context_k=5`
+- model: `cross-encoder/ms-marco-MiniLM-L-6-v2`
+
+Dense retrieval is strong for semantic recall because embedding models can match
+meaning even when the query and document use different wording. For example,
+“服务连不上数据库” can still retrieve text about “connection pool timeout” or
+“database connectivity failure”.
+
+Sparse retrieval is strong for keyword recall because enterprise technical
+documents often contain exact identifiers that must not be blurred away: error
+codes, configuration keys, class names, function names, command flags, table
+fields, and log snippets. BM25-style scoring helps queries such as `ORA-12514`,
+`CrashLoopBackOff`, or `max_pool_size` hit the right chunk.
+
+Cross-Encoder reranking is strong for precision because it reads the query and
+candidate context together, rather than comparing separately embedded vectors.
+That makes it better at deciding which retrieved parent context actually answers
+the question after Dense + Sparse have produced a high-recall candidate set.

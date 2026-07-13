@@ -38,6 +38,9 @@ class Settings(BaseSettings):
         default="cross-encoder/ms-marco-MiniLM-L-6-v2",
         alias="RERANKER_MODEL",
     )
+    enable_rerank: bool = Field(default=True, alias="ENABLE_RERANK")
+    rerank_top_n: int = Field(default=20, alias="RERANK_TOP_N")
+    final_context_k: int = Field(default=5, alias="FINAL_CONTEXT_K")
 
 
 @lru_cache(maxsize=1)
