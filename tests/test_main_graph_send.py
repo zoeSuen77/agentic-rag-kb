@@ -97,7 +97,7 @@ def test_one_subgraph_failure_does_not_block_other_subgraphs() -> None:
 
     result = graph.invoke(_state_with_tasks(3))
 
-    assert len(subgraph.invocations) == 3
+    assert len(subgraph.invocations) == 4
     assert len(result["sub_answers"]) == 3
     assert len(result["retrieved_contexts"]) == 2
     assert any("sub_retrieval_graph_error[task_2]" in error for error in result["error_messages"])

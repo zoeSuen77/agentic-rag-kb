@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentic_rag_kb.agents.json_utils import ensure_string_list, parse_json_object
+from agentic_rag_kb.agents.fallback import build_fallback_response, safe_default_json
+from agentic_rag_kb.agents.json_utils import ensure_string_list, generate_json_with_retry
 from agentic_rag_kb.graph.state import MainGraphState
 from agentic_rag_kb.llm import LLMClient
 
@@ -69,21 +70,36 @@ def query_rewrite_node(
     compression_summary = state.get("compression_summary", "")
 
     if llm_client is not None:
+        prompt = (
+            QUERY_REWRITE_PROMPT.replace("{original_query}", original_query)
+            .replace("{chat_history}", str(chat_history))
+            .replace("{compression_summary}", compression_summary)
+        )
         try:
-            parsed = parse_json_object(
-                llm_client.generate(
-                    QUERY_REWRITE_PROMPT.format(
-                        original_query=original_query,
-                        chat_history=chat_history,
-                        compression_summary=compression_summary,
-                    )
-                )
-            )
+            parsed, parse_errors = generate_json_with_retry(llm_client, prompt, max_attempts=2)
             result = _normalize_rewrite_result(parsed, query_for_rewrite)
-            return {**state, "rewritten_query": result["rewritten_query"], "query_rewrite_result": result}
+            errors = [*state.get("error_messages", []), *parse_errors]
+            return {
+                **state,
+                "rewritten_query": result["rewritten_query"],
+                "query_rewrite_result": result,
+                "error_messages": errors,
+            }
         except Exception as exc:
-            errors = [*state.get("error_messages", []), f"query_rewrite_llm_error: {exc}"]
-            state = {**state, "error_messages": errors}
+            fallback = build_fallback_response(
+                "llm_parse_error_fallback",
+                query=query_for_rewrite,
+                details=str(exc),
+            )
+            result = _normalize_rewrite_result(safe_default_json("llm_parse_error_fallback", query=query_for_rewrite), query_for_rewrite)
+            errors = [*state.get("error_messages", []), fallback["error_message"]]
+            return {
+                **state,
+                "rewritten_query": result["rewritten_query"],
+                "query_rewrite_result": result,
+                "fallback_type": fallback["fallback_type"],
+                "error_messages": errors,
+            }
 
     result = _fallback_rewrite(query_for_rewrite, chat_history, compression_summary)
     return {**state, "rewritten_query": result["rewritten_query"], "query_rewrite_result": result}

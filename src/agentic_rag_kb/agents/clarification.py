@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentic_rag_kb.agents.fallback import build_fallback_response
 from agentic_rag_kb.graph.state import MainGraphState
 
 
@@ -56,21 +57,19 @@ def clarification_node(state: MainGraphState) -> MainGraphState:
 def fallback_node(state: MainGraphState) -> MainGraphState:
     """Return a fallback answer after too many clarification loops."""
 
-    templates = [
-        "请问【系统/模块】的【具体配置项】应该如何配置？",
-        "【组件】出现【错误码/日志】时应该如何排查？",
-        "在【时间范围】内，【服务/接口】的【指标】为什么异常？",
-    ]
+    fallback = build_fallback_response(
+        "ambiguous_query_fallback",
+        query=state.get("original_query", ""),
+        details="clarification_loop_limit_exceeded",
+    )
     return {
         **state,
-        "final_answer": (
-            "问题仍然不够明确，我无法可靠检索知识库并生成答案。\n\n"
-            "你可以改成下面这样的提问模板：\n"
-            + "\n".join(f"- {template}" for template in templates)
-        ),
+        "final_answer": fallback["answer"],
+        "fallback_type": fallback["fallback_type"],
         "error_messages": [
             *state.get("error_messages", []),
             "clarification_loop_limit_exceeded",
+            fallback["error_message"],
         ],
     }
 
@@ -93,4 +92,3 @@ def _langgraph_interrupt(payload: dict[str, Any]) -> Any:
     except ImportError as exc:  # pragma: no cover - exercised by demo fallback path
         raise RuntimeError("LangGraph is required for real interrupt execution.") from exc
     return interrupt(payload)
-

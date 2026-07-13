@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from agentic_rag_kb.agents.fallback import build_fallback_response
 from agentic_rag_kb.graph.state import RetrievalSubGraphState
 from agentic_rag_kb.llm import LLMClient
 from agentic_rag_kb.rerank import RerankConfig
@@ -55,6 +56,7 @@ class RetrievalSubgraphConfig:
     retrieval_final_k: int = 20
     rerank_config: RerankConfig | None = None
     confidence_threshold: float = 0.35
+    subgraph_retry_limit: int = 1
 
     @property
     def effective_rerank_config(self) -> RerankConfig:
@@ -175,29 +177,38 @@ def hybrid_retrieve_node(
 
     config = dependencies.effective_config
     query = state.get("rewritten_sub_query") or state.get("sub_query", "")
-    try:
-        contexts = dependencies.retriever.retrieve(
-            query=query,
-            top_k_dense=config.top_k_dense,
-            top_k_sparse=config.top_k_sparse,
-            final_k=config.retrieval_final_k,
-        )
-        debug_info = dependencies.retriever.get_debug_info()
-        debug_payload = debug_info.to_json_dict() if hasattr(debug_info, "to_json_dict") else dict(debug_info)
-        debug = _merge_debug(
-            state,
-            "hybrid_retrieve",
-            {
-                "query": query,
-                "retrieved_count": len(contexts),
-                "retrieval_debug": debug_payload,
-            },
-        )
-        return {**state, "retrieved_chunks": _contexts_to_dicts(contexts), "debug": debug}
-    except Exception as exc:
-        errors = [*state.get("error_messages", []), f"hybrid_retrieve_error: {exc}"]
-        debug = _merge_debug(state, "hybrid_retrieve", {"error": str(exc), "retrieved_count": 0})
-        return {**state, "retrieved_chunks": [], "error_messages": errors, "debug": debug}
+    errors = [*state.get("error_messages", [])]
+    for attempt in range(config.subgraph_retry_limit + 1):
+        try:
+            contexts = dependencies.retriever.retrieve(
+                query=query,
+                top_k_dense=config.top_k_dense,
+                top_k_sparse=config.top_k_sparse,
+                final_k=config.retrieval_final_k,
+            )
+            debug_info = dependencies.retriever.get_debug_info()
+            debug_payload = debug_info.to_json_dict() if hasattr(debug_info, "to_json_dict") else dict(debug_info)
+            debug = _merge_debug(
+                state,
+                "hybrid_retrieve",
+                {
+                    "query": query,
+                    "retrieved_count": len(contexts),
+                    "retry_attempts": attempt,
+                    "retrieval_debug": debug_payload,
+                },
+            )
+            return {**state, "retrieved_chunks": _contexts_to_dicts(contexts), "error_messages": errors, "debug": debug}
+        except Exception as exc:
+            errors.append(f"hybrid_retrieve_error_attempt_{attempt + 1}: {exc}")
+            if attempt >= config.subgraph_retry_limit:
+                debug = _merge_debug(
+                    state,
+                    "hybrid_retrieve",
+                    {"error": str(exc), "retrieved_count": 0, "retry_attempts": attempt},
+                )
+                return {**state, "retrieved_chunks": [], "error_messages": errors, "debug": debug}
+    return {**state, "retrieved_chunks": [], "error_messages": errors}
 
 
 def rerank_node(
@@ -254,9 +265,20 @@ def generate_sub_answer_node(
     contexts = _reranked_context_objects_from_state(state)
     sub_query = state.get("sub_query", "")
     if not contexts:
-        answer = "当前上下文不足，无法回答该子问题。\n\n引用来源：无"
-        debug = _merge_debug(state, "generate_sub_answer", {"used_context_count": 0, "generation": "no_context"})
-        return {**state, "sub_answer": answer, "debug": debug}
+        fallback = build_fallback_response("retrieval_empty_fallback", query=sub_query)
+        answer = f"{fallback['answer']}\n\n引用来源：无"
+        debug = _merge_debug(
+            state,
+            "generate_sub_answer",
+            {"used_context_count": 0, "generation": "retrieval_empty_fallback", "fallback_type": fallback["fallback_type"]},
+        )
+        return {
+            **state,
+            "sub_answer": answer,
+            "fallback_type": fallback["fallback_type"],
+            "error_messages": [*state.get("error_messages", []), fallback["error_message"]],
+            "debug": debug,
+        }
 
     if dependencies.llm_client is None:
         answer = _fallback_sub_answer(sub_query, contexts)
@@ -288,6 +310,18 @@ def confidence_check_node(
     answer = state.get("sub_answer", "")
     confidence = _estimate_confidence(contexts, answer)
     insufficient_context = confidence < effective_config.confidence_threshold
+    answer = state.get("sub_answer", "")
+    errors = [*state.get("error_messages", [])]
+    fallback_type = state.get("fallback_type")
+    if insufficient_context and contexts and "low_confidence_fallback" not in errors:
+        fallback = build_fallback_response(
+            "low_confidence_fallback",
+            query=state.get("sub_query", ""),
+            details=f"confidence={confidence}",
+        )
+        answer = f"{answer}\n\n{fallback['answer']}"
+        errors.append(fallback["error_message"])
+        fallback_type = fallback["fallback_type"]
     debug = _merge_debug(
         state,
         "confidence_check",
@@ -299,8 +333,11 @@ def confidence_check_node(
     )
     return {
         **state,
+        "sub_answer": answer,
         "confidence": confidence,
         "insufficient_context": insufficient_context,
+        "fallback_type": fallback_type,
+        "error_messages": errors,
         "debug": debug,
     }
 

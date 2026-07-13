@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from agentic_rag_kb.agents.json_utils import parse_json_object
+from agentic_rag_kb.agents.fallback import build_fallback_response
+from agentic_rag_kb.agents.json_utils import generate_json_with_retry
 from agentic_rag_kb.graph.state import MainGraphState
 from agentic_rag_kb.llm import LLMClient
 
@@ -62,17 +63,24 @@ def ambiguity_detection_node(
     rewritten_query = state.get("rewritten_query") or state.get("original_query", "")
 
     if llm_client is not None:
+        prompt = AMBIGUITY_PROMPT.replace("{rewritten_query}", rewritten_query)
         try:
-            parsed = parse_json_object(llm_client.generate(AMBIGUITY_PROMPT.format(rewritten_query=rewritten_query)))
+            parsed, parse_errors = generate_json_with_retry(llm_client, prompt, max_attempts=2)
             result = _normalize_ambiguity_result(parsed)
             return {
                 **state,
                 "ambiguity_result": result,
                 "clarification_question": result["clarification_question"],
+                "error_messages": [*state.get("error_messages", []), *parse_errors],
             }
         except Exception as exc:
-            errors = [*state.get("error_messages", []), f"ambiguity_detection_llm_error: {exc}"]
-            state = {**state, "error_messages": errors}
+            fallback = build_fallback_response(
+                "llm_parse_error_fallback",
+                query=rewritten_query,
+                details=str(exc),
+            )
+            errors = [*state.get("error_messages", []), fallback["error_message"]]
+            state = {**state, "error_messages": errors, "fallback_type": fallback["fallback_type"]}
 
     result = _fallback_ambiguity_detection(rewritten_query)
     return {**state, "ambiguity_result": result, "clarification_question": result["clarification_question"]}

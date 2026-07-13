@@ -63,6 +63,7 @@ class MainGraphDependencies:
     llm_client: Any | None = None
     memory_trigger: CompressionTrigger | None = None
     memory_compressor: ConversationCompressor | None = None
+    subgraph_retry_limit: int = 1
 
 
 MAIN_GRAPH_MERMAID = """```mermaid
@@ -242,33 +243,43 @@ def run_sub_retrieval_node(
 ) -> MainGraphState:
     """Run one retrieval subgraph and convert its result to a main-state update."""
 
-    try:
-        result = dependencies.retrieval_subgraph.invoke(state)
-    except Exception as exc:
-        sub_task_id = state.get("sub_task_id", "")
-        sub_query = state.get("sub_query", "")
-        return {
-            "sub_answers": [
-                {
-                    "sub_task_id": sub_task_id,
-                    "sub_query": sub_query,
-                    "sub_answer": "当前子任务检索失败，已跳过该子问题。",
-                    "confidence": 0.0,
-                    "insufficient_context": True,
+    result: RetrievalSubGraphState | None = None
+    retry_errors: list[str] = []
+    for attempt in range(dependencies.subgraph_retry_limit + 1):
+        try:
+            result = dependencies.retrieval_subgraph.invoke(state)
+            break
+        except Exception as exc:
+            retry_errors.append(f"sub_retrieval_graph_error_attempt_{attempt + 1}: {exc}")
+            if attempt >= dependencies.subgraph_retry_limit:
+                sub_task_id = state.get("sub_task_id", "")
+                sub_query = state.get("sub_query", "")
+                return {
+                    "sub_answers": [
+                        {
+                            "sub_task_id": sub_task_id,
+                            "sub_query": sub_query,
+                            "sub_answer": "当前子任务检索失败，已跳过该子问题。我不会在没有检索证据时编造答案。",
+                            "confidence": 0.0,
+                            "insufficient_context": True,
+                            "fallback_type": "retrieval_empty_fallback",
+                        }
+                    ],
+                    "retrieved_contexts": [],
+                    "retrieval_debug": {
+                        "subgraphs": [
+                            {
+                                "sub_task_id": sub_task_id,
+                                "sub_query": sub_query,
+                                "retry_attempts": attempt,
+                                "error": str(exc),
+                            }
+                        ]
+                    },
+                    "error_messages": [*retry_errors, f"sub_retrieval_graph_error[{sub_task_id}]: {exc}"],
                 }
-            ],
-            "retrieved_contexts": [],
-            "retrieval_debug": {
-                "subgraphs": [
-                    {
-                        "sub_task_id": sub_task_id,
-                        "sub_query": sub_query,
-                        "error": str(exc),
-                    }
-                ]
-            },
-            "error_messages": [f"sub_retrieval_graph_error[{sub_task_id}]: {exc}"],
-        }
+
+    assert result is not None
 
     sub_answer = {
         "sub_task_id": result.get("sub_task_id", state.get("sub_task_id", "")),
@@ -276,6 +287,7 @@ def run_sub_retrieval_node(
         "sub_answer": result.get("sub_answer", ""),
         "confidence": result.get("confidence", 0.0),
         "insufficient_context": result.get("insufficient_context", False),
+        "fallback_type": result.get("fallback_type"),
     }
     return {
         "sub_answers": [sub_answer],
@@ -287,11 +299,13 @@ def run_sub_retrieval_node(
                     "sub_query": sub_answer["sub_query"],
                     "confidence": sub_answer["confidence"],
                     "insufficient_context": sub_answer["insufficient_context"],
+                    "fallback_type": sub_answer.get("fallback_type"),
+                    "retry_errors": retry_errors,
                     "debug": result.get("debug", {}),
                 }
             ]
         },
-        "error_messages": result.get("error_messages", []),
+        "error_messages": [*retry_errors, *result.get("error_messages", [])],
     }
 
 
