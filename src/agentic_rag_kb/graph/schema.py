@@ -48,6 +48,8 @@ def default_retrieval_subgraph_state(
         reranked_contexts=[],
         sub_answer="",
         confidence=0.0,
+        insufficient_context=False,
+        debug={},
         error_messages=[],
     )
 
@@ -117,25 +119,31 @@ RETRIEVAL_SUBGRAPH_NODE_IO: list[NodeIOSpec] = [
     NodeIOSpec(
         node_name="rewrite_sub_query",
         inputs=["sub_task_id", "sub_query"],
-        outputs=["rewritten_sub_query"],
+        outputs=["rewritten_sub_query", "debug"],
         description="Rewrite the subquestion for retrieval.",
     ),
     NodeIOSpec(
         node_name="hybrid_retrieve",
         inputs=["rewritten_sub_query"],
-        outputs=["retrieved_chunks"],
+        outputs=["retrieved_chunks", "debug", "error_messages"],
         description="Run Dense + Sparse hybrid retrieval and RRF fusion.",
     ),
     NodeIOSpec(
         node_name="rerank_contexts",
         inputs=["rewritten_sub_query", "retrieved_chunks"],
-        outputs=["reranked_contexts"],
+        outputs=["reranked_contexts", "debug", "error_messages"],
         description="Apply Cross-Encoder reranking over parent-expanded contexts.",
     ),
     NodeIOSpec(
         node_name="generate_sub_answer",
         inputs=["sub_query", "reranked_contexts"],
-        outputs=["sub_answer", "confidence"],
+        outputs=["sub_answer", "debug", "error_messages"],
         description="Generate a local answer grounded in reranked contexts.",
+    ),
+    NodeIOSpec(
+        node_name="confidence_check",
+        inputs=["sub_answer", "reranked_contexts"],
+        outputs=["confidence", "insufficient_context", "debug"],
+        description="Estimate evidence sufficiency and mark low-confidence subanswers.",
     ),
 ]

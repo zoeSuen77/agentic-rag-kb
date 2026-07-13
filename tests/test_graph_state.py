@@ -24,6 +24,7 @@ def test_default_main_graph_state_values() -> None:
     assert state["chat_history"] == []
     assert state["ambiguity_result"] == {}
     assert state["decomposed_tasks"] == []
+    assert state["decomposition_debug"] == {}
     assert state["sub_answers"] == []
     assert state["retrieved_contexts"] == []
     assert state["loop_count"] == 0
@@ -43,6 +44,8 @@ def test_default_retrieval_subgraph_state_values() -> None:
     assert state["reranked_contexts"] == []
     assert state["sub_answer"] == ""
     assert state["confidence"] == 0.0
+    assert state["insufficient_context"] is False
+    assert state["debug"] == {}
     assert state["error_messages"] == []
 
 
@@ -99,4 +102,5 @@ def test_node_io_specs_are_declared() -> None:
     assert "detect_ambiguity" in main_node_names
     assert "dispatch_retrieval_subgraphs" in main_node_names
     assert "hybrid_retrieve" in sub_node_names
+    assert "confidence_check" in sub_node_names
     assert all(spec.inputs or spec.outputs for spec in MAIN_GRAPH_NODE_IO)

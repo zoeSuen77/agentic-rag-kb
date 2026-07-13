@@ -6,6 +6,11 @@ fallback edges, and human-in-the-loop interrupts.
 """
 
 from agentic_rag_kb.graph.main_graph import build_main_graph
+from agentic_rag_kb.graph.retrieval_subgraph import (
+    RetrievalSubgraphConfig,
+    RetrievalSubgraphDependencies,
+    build_retrieval_subgraph,
+)
 from agentic_rag_kb.graph.schema import (
     MAIN_GRAPH_NODE_IO,
     RETRIEVAL_SUBGRAPH_NODE_IO,
@@ -19,7 +24,10 @@ __all__ = [
     "RETRIEVAL_SUBGRAPH_NODE_IO",
     "MainGraphState",
     "RetrievalSubGraphState",
+    "RetrievalSubgraphConfig",
+    "RetrievalSubgraphDependencies",
     "build_main_graph",
+    "build_retrieval_subgraph",
     "default_main_graph_state",
     "default_retrieval_subgraph_state",
 ]

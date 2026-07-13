@@ -141,6 +141,12 @@ class RetrievalSubGraphState(TypedDict, total=False):
     # Confidence score for this subgraph's local answer.
     confidence: float
 
+    # Whether retrieved/reranked evidence is insufficient for a reliable answer.
+    insufficient_context: bool
+
+    # Per-node debug trace for this independent retrieval lifecycle.
+    debug: dict[str, Any]
+
     # Non-fatal errors produced by this subgraph.
     error_messages: Annotated[list[str], append_error_messages]
 
