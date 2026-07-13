@@ -1,6 +1,0 @@
-url: http://localhost:6333
-api_key: null
-child_collection: kb_child_chunks
-parent_collection: kb_parent_chunks
-vector_size: 256
-

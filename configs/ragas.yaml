@@ -1,7 +1,0 @@
-metrics:
-  - answer_correctness
-  - context_recall
-  - faithfulness
-  - context_precision
-report_dir: data/eval/reports
-

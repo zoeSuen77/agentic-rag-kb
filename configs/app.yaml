@@ -1,7 +1,0 @@
-app_name: agentic-rag-kb
-environment: local
-log_level: INFO
-data_dir: data
-memory_dir: data/memory
-index_dir: data/index
-
