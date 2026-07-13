@@ -105,7 +105,17 @@ def _fallback_ambiguity_detection(query: str) -> dict[str, Any]:
     if not stripped:
         return _result("missing_entity", "请补充你要查询的系统、组件或问题。", 0.95)
 
+    if "用户澄清：" in stripped and stripped.split("用户澄清：", 1)[1].strip():
+        return {
+            "is_ambiguous": False,
+            "ambiguity_type": "none",
+            "clarification_question": "",
+            "confidence": 0.86,
+        }
+
     if any(token in lowered for token in ["这个", "那个", "它", "this", "that", "it"]) and "上下文：" not in stripped:
+        if "部署" in stripped:
+            return _result("missing_entity", "你指的是哪个模块的部署？", 0.9)
         return _result("missing_entity", "你说的“这个/它”具体指哪个系统、组件或配置项？", 0.9)
 
     if any(token in lowered for token in ["最近", "近期", "趋势", "变化", "增长", "下降", "latency", "qps"]):

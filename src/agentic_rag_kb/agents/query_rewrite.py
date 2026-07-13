@@ -61,6 +61,10 @@ def query_rewrite_node(
     """Rewrite `original_query` using chat history and compressed memory."""
 
     original_query = state.get("original_query", "").strip()
+    user_clarification = state.get("user_clarification", "").strip()
+    query_for_rewrite = (
+        f"{original_query}\n用户澄清：{user_clarification}" if user_clarification else original_query
+    )
     chat_history = state.get("chat_history", [])
     compression_summary = state.get("compression_summary", "")
 
@@ -75,13 +79,13 @@ def query_rewrite_node(
                     )
                 )
             )
-            result = _normalize_rewrite_result(parsed, original_query)
+            result = _normalize_rewrite_result(parsed, query_for_rewrite)
             return {**state, "rewritten_query": result["rewritten_query"], "query_rewrite_result": result}
         except Exception as exc:
             errors = [*state.get("error_messages", []), f"query_rewrite_llm_error: {exc}"]
             state = {**state, "error_messages": errors}
 
-    result = _fallback_rewrite(original_query, chat_history, compression_summary)
+    result = _fallback_rewrite(query_for_rewrite, chat_history, compression_summary)
     return {**state, "rewritten_query": result["rewritten_query"], "query_rewrite_result": result}
 
 
@@ -127,4 +131,3 @@ def _has_pronoun_reference(query: str) -> bool:
     lowered = query.lower()
     pronouns = ["这个", "那个", "它", "这", "该问题", "this", "that", "it", "them"]
     return any(token in lowered for token in pronouns)
-

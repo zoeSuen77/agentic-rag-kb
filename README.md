@@ -201,3 +201,21 @@ python scripts/ask_baseline.py --query "如何配置数据库连接池？"
 
 The baseline prompt requires the model to answer only from the supplied context,
 say it does not know when evidence is insufficient, and output citation sources.
+
+## Human-in-the-loop Clarification Demo
+
+The Agentic RAG graph uses LangGraph `interrupt` to pause when a query is
+ambiguous and resume after the user provides clarification.
+
+```bash
+python scripts/demo_hitl.py
+```
+
+Demo flow:
+
+```text
+User: 这个怎么部署？
+Assistant interrupt: 你指的是哪个模块的部署？
+User clarification: Qdrant 和 Gradio
+Resumed -> query_rewrite_node -> ambiguity_detection_node -> continue
+```
