@@ -104,3 +104,17 @@ Each output row contains:
 - `section_title`
 - `text`
 - `metadata`
+
+## Parent-Child Chunking
+
+Build hierarchical parent and child chunks from parsed documents:
+
+```bash
+python scripts/build_chunks.py --input data/processed/documents.jsonl --output data/chunks
+```
+
+Outputs:
+
+- `data/chunks/parent_chunks.jsonl`
+- `data/chunks/child_chunks.jsonl`
+- `data/chunks/chunking_report.json`
